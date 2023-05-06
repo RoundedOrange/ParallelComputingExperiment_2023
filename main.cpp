@@ -1,5 +1,5 @@
 #include "Defines.h"
-
+#include<omp.h>
 inline void correntess(ComplexType result1, ComplexType result2, ComplexType result3) {
 	double re_diff, im_diff;
 
@@ -23,15 +23,17 @@ inline void correntess(ComplexType result1, ComplexType result2, ComplexType res
 }
 
 int main(int argc, char **argv) {
+	//并行化
+	int thread_count = strtol(argv[1],NULL,10);
 
 	int number_bands = 0, nvband = 0, ncouls = 0, nodes_per_group = 0;
 	int npes = 1;
-	if (argc == 1) {
+	if (argc == 2) {
 		number_bands = 512;
 		nvband = 2;
 		ncouls = 32768;
 		nodes_per_group = 20;
-	} else if (argc == 5) {
+	} else if (argc == 6) {
 		number_bands = atoi(argv[1]);
 		nvband = atoi(argv[2]);
 		ncouls = atoi(argv[3]);
@@ -125,6 +127,7 @@ int main(int argc, char **argv) {
 	}
 
 	k_start = system_clock::now();
+	# pragma omp parallel num_threads(thread_count)
 	noflagOCC_solver(number_bands, ngpown, ncouls, inv_igp_index, indinv,
 			wx_array, wtilde_array, aqsmtemp, aqsntemp, I_eps_array,
 			vcoul, achtemp);
@@ -163,8 +166,14 @@ void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
 
 	DataType ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00,
 		 ach_im1 = 0.00, ach_im2 = 0.00;
-
-	for (int n1 = 0; n1 < number_bands; ++n1) {
+	int my_rank = omp_get_thread_num();
+	int thread_count = omp_get_num_threads();
+	int real_number_bands = number_bands / thread_count + 1;
+	int start_number_bands = my_rank * real_number_bands;
+	int stop_number_bands = (my_rank+1)*real_number_bands;
+	if(number_bands<stop_number_bands)
+		stop_number_bands = number_bands;
+	for (int n1 = start_number_bands; n1 < stop_number_bands; ++n1) {
 		for (int ig = 0; ig < ncouls; ++ig) {
 			for (int my_igp = 0; my_igp < ngpown; ++my_igp) {
 				int indigp = inv_igp_index(my_igp);
@@ -200,8 +209,8 @@ void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
 		} 
 	}   
 
-
-	achtemp(0) = ComplexType(ach_re0, ach_im0);
-	achtemp(1) = ComplexType(ach_re1, ach_im1);
-	achtemp(2) = ComplexType(ach_re2, ach_im2);
+	# pragma omp critical
+	achtemp(0) += ComplexType(ach_re0, ach_im0);
+	achtemp(1) += ComplexType(ach_re1, ach_im1);
+	achtemp(2) += ComplexType(ach_re2, ach_im2);
 }
