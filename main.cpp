@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 		ncouls = 32768;
 		nodes_per_group = 20;
 		thread_num = atoi(argv[1]);
-		if (thread_num <= 0) 
+		if (thread_num <= 0 || thread_num >100) 
 		{
 			std::cout << "wrong thread_num!\n";
 			exit(0);
@@ -48,7 +48,7 @@ int main(int argc, char **argv)
 	} else if (argc == 6) 
 	{
 		thread_num = atoi(argv[1]);
-		if (thread_num <= 0) 
+		if (thread_num <= 0 || thread_num >100) 
 		{
 			std::cout << "wrong thread_num!\n";
 			exit(0);
