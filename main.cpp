@@ -1,5 +1,9 @@
 #include "Defines.h"
-#include<omp.h>
+#include <algorithm>
+#include <thread>
+#include <mutex>
+#include <stdlib.h>
+#include <vector>
 inline void correntess(ComplexType result1, ComplexType result2, ComplexType result3) {
 	double re_diff, im_diff;
 
@@ -21,24 +25,32 @@ inline void correntess(ComplexType result1, ComplexType result2, ComplexType res
 		printf("\n!!!! FAILURE - Correctness test failed :-( :-(  \n");
 	}
 }
-
+int thread_number ;
 int main(int argc, char **argv) {
-	//并行化
-	int thread_count = strtol(argv[1],NULL,10);
 
 	int number_bands = 0, nvband = 0, ncouls = 0, nodes_per_group = 0;
 	int npes = 1;
-	if (argc == 2) {
+	if (argc == 1) {
 		number_bands = 512;
 		nvband = 2;
 		ncouls = 32768;
 		nodes_per_group = 20;
-	} else if (argc == 6) {
+	} else if (argc == 5) {
 		number_bands = atoi(argv[1]);
 		nvband = atoi(argv[2]);
 		ncouls = atoi(argv[3]);
 		nodes_per_group = atoi(argv[4]);
-	} else {
+	} else if (argc == 2) {
+		number_bands = 512;
+		nvband = 2;
+		ncouls = 32768;
+		nodes_per_group = 20;
+		thread_number = atoi(argv[1]);
+		if (thread_number < 0 || thread_number > 100) {
+			std::cout << "The thread number is between 1 to 100\n";
+			exit(0);
+		}
+	}else {
 		std::cout << "The correct form of input is : " << endl;
 		std::cout << " ./main.exe <number_bands> <number_valence_bands> "
 			"<number_plane_waves> <nodes_per_mpi_group> "
@@ -127,7 +139,6 @@ int main(int argc, char **argv) {
 	}
 
 	k_start = system_clock::now();
-	# pragma omp parallel num_threads(thread_count)
 	noflagOCC_solver(number_bands, ngpown, ncouls, inv_igp_index, indinv,
 			wx_array, wtilde_array, aqsmtemp, aqsntemp, I_eps_array,
 			vcoul, achtemp);
@@ -154,28 +165,24 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+/*----------------------------------solution------------------------------------------*/
+DataType ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00,
+		 ach_im1 = 0.00, ach_im2 = 0.00;
+std::mutex mutexLock;
 
-void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
+void threadFuc(size_t number_bands, size_t beg, size_t _end, size_t ncouls,
 		ARRAY1D_int &inv_igp_index, ARRAY1D_int &indinv,
 		ARRAY1D_DataType &wx_array, ARRAY2D &wtilde_array,
 		ARRAY2D &aqsmtemp, ARRAY2D &aqsntemp,
 		ARRAY2D &I_eps_array, ARRAY1D_DataType &vcoul,
 		ARRAY1D &achtemp) {
-	time_point<system_clock> start, end;
-	start = system_clock::now();
+	
+	register  DataType __ach_re[3], __ach_im[3];
+	__ach_im[0] = __ach_im[1] = __ach_im[2] = __ach_re[0] = __ach_re[1] = __ach_re[2] = 0.00;
 
-	DataType ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00,
-		 ach_im1 = 0.00, ach_im2 = 0.00;
-	int my_rank = omp_get_thread_num();
-	int thread_count = omp_get_num_threads();
-	int real_number_bands = number_bands / thread_count + 1;
-	int start_number_bands = my_rank * real_number_bands;
-	int stop_number_bands = (my_rank+1)*real_number_bands;
-	if(number_bands<stop_number_bands)
-		stop_number_bands = number_bands;
-	for (int n1 = start_number_bands; n1 < stop_number_bands; ++n1) {
-		for (int ig = 0; ig < ncouls; ++ig) {
-			for (int my_igp = 0; my_igp < ngpown; ++my_igp) {
+	for (int my_igp = beg; my_igp < _end; ++my_igp)  {
+		for (int n1 = 0; n1 < number_bands; ++n1)  {
+			 for (int ig = 0; ig < ncouls; ++ig) { // 每个线程执 行一部分，[beg,_end)为此线程执行的部分。
 				int indigp = inv_igp_index(my_igp);
 				int igp = indinv(indigp);
 				DataType achtemp_re_loc[nend - nstart], achtemp_im_loc[nend - nstart];
@@ -199,18 +206,72 @@ void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
 					achtemp_re_loc[iw] += (sch_array).real();
 					achtemp_im_loc[iw] += (sch_array).imag();
 				}
-				ach_re0 += achtemp_re_loc[0];
-				ach_re1 += achtemp_re_loc[1];
-				ach_re2 += achtemp_re_loc[2];
-				ach_im0 += achtemp_im_loc[0];
-				ach_im1 += achtemp_im_loc[1];
-				ach_im2 += achtemp_im_loc[2];
+				__ach_re[0] += achtemp_re_loc[0];
+				__ach_re[1] += achtemp_re_loc[1];
+				__ach_re[2] += achtemp_re_loc[2];
+				__ach_im[0] += achtemp_im_loc[0];
+				__ach_im[1] += achtemp_im_loc[1];
+				__ach_im[2] += achtemp_im_loc[2];
 			}
 		} 
 	}   
+	mutexLock.lock();
+	ach_re0 += __ach_re[0];
+	ach_re1 += __ach_re[1];  
+	ach_re2 += __ach_re[2];
+	ach_im0 += __ach_im[0];
+	ach_im1 += __ach_im[1];
+	ach_im2 += __ach_im[2];
+	mutexLock.unlock();
 
-	# pragma omp critical
-	achtemp(0) += ComplexType(ach_re0, ach_im0);
-	achtemp(1) += ComplexType(ach_re1, ach_im1);
-	achtemp(2) += ComplexType(ach_re2, ach_im2);
+}
+
+void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
+		ARRAY1D_int &inv_igp_index, ARRAY1D_int &indinv,
+		ARRAY1D_DataType &wx_array, ARRAY2D &wtilde_array,
+		ARRAY2D &aqsmtemp, ARRAY2D &aqsntemp,
+		ARRAY2D &I_eps_array, ARRAY1D_DataType &vcoul,
+		ARRAY1D &achtemp) {
+	time_point<system_clock> start, end;
+	start = system_clock::now();
+
+	std::cout << " ------ muti thread running begin dev------- \n";
+	std::cout << " ------ total thread number is " << thread_number << " ------- \n";
+
+	if (thread_number == 1) {
+		ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00, ach_im1 = 0.00, ach_im2 = 0.00;
+		threadFuc(number_bands, 0, ngpown, ncouls, 
+				std::ref(inv_igp_index ), std::ref(indinv), std::ref(wx_array), std::ref(wtilde_array), 
+				std::ref(aqsmtemp), std::ref(aqsntemp), std::ref(I_eps_array), std::ref(vcoul),  std::ref(achtemp));
+	}
+	else {
+		std::vector<std::thread> threads;
+		time_point<system_clock>  k_start, k_end; 
+		duration<double> elapsed ;
+		k_start = system_clock::now();
+
+		size_t _size = (ngpown / thread_number) + 1, beg = 0, _end = _size;
+		for (int i = 0; i < thread_number; ++i) {
+			threads.push_back(
+					std::thread(threadFuc, number_bands, beg, _end, ncouls, 
+					std::ref(inv_igp_index ), std::ref(indinv), std::ref(wx_array), std::ref(wtilde_array), 
+					std::ref(aqsmtemp), std::ref(aqsntemp), std::ref(I_eps_array), std::ref(vcoul),  std::ref(achtemp) ) );
+			beg += _size, _end += _size;
+			if (_end > ngpown) _end = ngpown;
+			if (beg >= _end) break;
+		}
+		ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00, ach_im1 = 0.00, ach_im2 = 0.00;
+		for (auto &th : threads) th.join();
+		threads.clear();
+
+		k_end = system_clock::now();
+		elapsed = k_end - k_start;
+		std::cout << " muti thread time cost " << elapsed.count() << "\n";
+	}
+
+	std::cout << " ------ muti thread running end ------- \n";
+
+	achtemp(0) = ComplexType(ach_re0, ach_im0);
+	achtemp(1) = ComplexType(ach_re1, ach_im1);
+	achtemp(2) = ComplexType(ach_re2, ach_im2);
 }
