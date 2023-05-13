@@ -183,15 +183,15 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 		ARRAY2D &I_eps_array, ARRAY1D_DataType &vcoul,
 		ARRAY1D &achtemp)
 {
-	register  DataType __ach_re[3], __ach_im[3];
-	__ach_im[0] = __ach_im[1] = __ach_im[2] = __ach_re[0] = __ach_re[1] = __ach_re[2] = 0.00;
-	for (int my_igp = ngpown_start; my_igp < ngpown_end; ++my_igp) 
+	register  DataType thread_ach_re[3], thread_ach_im[3];//尽量不要用通过内存寻址访问，而是通过寄存器
+	thread_ach_im[0] = thread_ach_im[1] = thread_ach_im[2] = thread_ach_re[0] = thread_ach_re[1] = thread_ach_re[2] = 0.00;
+	for (int thread_igp = ngpown_start; thread_igp < ngpown_end; ++thread_igp) 
 	{
 		for (int n1 = 0; n1 < number_bands; ++n1) 
 		{
 			for (int ig = 0; ig < ncouls; ++ig) 
 			{
-				int indigp = inv_igp_index(my_igp);
+				int indigp = inv_igp_index(thread_igp);
 				int igp = indinv(indigp);
 				DataType achtemp_re_loc[nend - nstart], achtemp_im_loc[nend - nstart];
 				for (int iw = nstart; iw < nend; ++iw)
@@ -199,32 +199,32 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 					achtemp_re_loc[iw] = 0.00;
 					achtemp_im_loc[iw] = 0.00;
 				}
-				ComplexType sch_store1 =ComplexType_conj(aqsmtemp(n1, igp)) * aqsntemp(n1, igp) * 0.5 *	vcoul(igp) * wtilde_array(my_igp, igp);
+				ComplexType sch_store1 =ComplexType_conj(aqsmtemp(n1, igp)) * aqsntemp(n1, igp) * 0.5 *	vcoul(igp) * wtilde_array(thread_igp, igp);
 				for (int iw = nstart; iw < nend; ++iw)
 				{
-					ComplexType wdiff =	wx_array(iw) - wtilde_array(my_igp, ig);
+					ComplexType wdiff =	wx_array(iw) - wtilde_array(thread_igp, ig);
 					ComplexType delw =ComplexType_conj(wdiff) * (1 / (wdiff * ComplexType_conj(wdiff)).real());
-					ComplexType sch_array =	delw * I_eps_array(my_igp, ig) * sch_store1;
+					ComplexType sch_array =	delw * I_eps_array(thread_igp, ig) * sch_store1;
 					achtemp_re_loc[iw] += (sch_array).real();
 					achtemp_im_loc[iw] += (sch_array).imag();
 				}
-				__ach_re[0] += achtemp_re_loc[0];
-				__ach_re[1] += achtemp_re_loc[1];
-				__ach_re[2] += achtemp_re_loc[2];
-				__ach_im[0] += achtemp_im_loc[0];
-				__ach_im[1] += achtemp_im_loc[1];
-				__ach_im[2] += achtemp_im_loc[2];
+				thread_ach_re[0] += achtemp_re_loc[0];
+				thread_ach_re[1] += achtemp_re_loc[1];
+				thread_ach_re[2] += achtemp_re_loc[2];
+				thread_ach_im[0] += achtemp_im_loc[0];
+				thread_ach_im[1] += achtemp_im_loc[1];
+				thread_ach_im[2] += achtemp_im_loc[2];
 			}
 		} 
 	}
 	//进入临界区
 	the_mutex.lock();
-	ach_re0 += __ach_re[0];
-	ach_re1 += __ach_re[1];  
-	ach_re2 += __ach_re[2];
-	ach_im0 += __ach_im[0];
-	ach_im1 += __ach_im[1];
-	ach_im2 += __ach_im[2];
+	ach_re0 += thread_ach_re[0];
+	ach_re1 += thread_ach_re[1];  
+	ach_re2 += thread_ach_re[2];
+	ach_im0 += thread_ach_im[0];
+	ach_im1 += thread_ach_im[1];
+	ach_im2 += thread_ach_im[2];
 	the_mutex.unlock();
 	//离开临界区
 }
@@ -260,10 +260,10 @@ void noflagOCC_solver(size_t number_bands, size_t ngpown, size_t ncouls,
 				std::ref(indinv), std::ref(wx_array), std::ref(wtilde_array),std::ref(aqsmtemp), std::ref(aqsntemp),
 				 std::ref(I_eps_array), std::ref(vcoul),  std::ref(achtemp)));
 			ngpown_start += ngpown_size, ngpown_end += ngpown_size;
-			if (ngpown_end > ngpown) ngpown_end = ngpown;
+			if (ngpown_end > ngpown) ngpown_end = ngpown;//如果不能整除分给各个线程，最后一个end要缩小到ngpown才不会溢出
 			if (ngpown_start >= ngpown_end) break;
 		}
-		ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00, ach_im1 = 0.00, ach_im2 = 0.00;
+		ach_re0 = ach_re1 = ach_re2 = ach_im0 = ach_im1 = ach_im2 = 0.00;
 		for (auto &each_thread : thread_vector)
 			each_thread.join();
 		thread_vector.clear();
