@@ -8,6 +8,8 @@
 int thread_num;//线程数
 DataType ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00, ach_im1 = 0.00, ach_im2 = 0.00;//从循环里面提出来
 std::mutex the_mutex;//互斥量
+int global_number_bands;
+int global_ncouls;
 inline void correntess(ComplexType result1, ComplexType result2, ComplexType result3)
 {
 	double re_diff, im_diff;
@@ -67,6 +69,8 @@ int main(int argc, char **argv)
 			<< endl;
 		exit(0);
 	}
+	global_number_bands= number_bands;
+	global_ncouls = ncouls;
 	int ngpown = ncouls / (nodes_per_group * npes);
 
 	// Constants that will be used later
@@ -176,6 +180,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 //核心函数，每个线程都调用这个函数
+
 void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands, size_t ncouls,
 		ARRAY1D_int &inv_igp_index, ARRAY1D_int &indinv,
 		ARRAY1D_DataType &wx_array, ARRAY2D &wtilde_array,
@@ -185,6 +190,7 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 {
 	register  DataType thread_ach_re[3], thread_ach_im[3];//尽量不要用通过内存寻址访问，而是通过寄存器
 	thread_ach_im[0] = thread_ach_im[1] = thread_ach_im[2] = thread_ach_re[0] = thread_ach_re[1] = thread_ach_re[2] = 0.00;
+	//ComplexType conj_array[number_bands][ncouls];
 	for (int thread_igp = ngpown_start; thread_igp < ngpown_end; ++thread_igp) 
 	{
 		for (int n1 = 0; n1 < number_bands; ++n1) 
@@ -199,14 +205,17 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 					achtemp_re_loc[iw] = 0.00;
 					achtemp_im_loc[iw] = 0.00;
 				}
-				ComplexType sch_store1 =ComplexType_conj(aqsmtemp(n1, igp)) * aqsntemp(n1, igp) * 0.5 *	vcoul(igp) * wtilde_array(thread_igp, igp);
+				ComplexType sch_store1 =ComplexType_conj(aqsmtemp(n1, igp)) * aqsntemp(n1, igp) * wtilde_array(thread_igp, igp)*I_eps_array(thread_igp, ig);
 				for (int iw = nstart; iw < nend; ++iw)
 				{
 					ComplexType wdiff =	wx_array(iw) - wtilde_array(thread_igp, ig);
-					ComplexType delw =ComplexType_conj(wdiff) * (1 / (wdiff * ComplexType_conj(wdiff)).real());
-					ComplexType sch_array =	delw * I_eps_array(thread_igp, ig) * sch_store1;
-					achtemp_re_loc[iw] += (sch_array).real();
-					achtemp_im_loc[iw] += (sch_array).imag();
+					DataType wdiff_real=wdiff.real();
+					DataType wdiff_imag = wdiff.imag();
+					DataType asas =1.0/ (wdiff_real*wdiff_real + wdiff_imag* wdiff_imag);
+					ComplexType delw =ComplexType_conj(wdiff) ;
+					ComplexType sch_array =	delw * sch_store1;
+					achtemp_re_loc[iw] += (sch_array).real()* 0.5* asas *	vcoul(igp);
+					achtemp_im_loc[iw] += (sch_array).imag()* 0.5* asas *	vcoul(igp);
 				}
 				thread_ach_re[0] += achtemp_re_loc[0];
 				thread_ach_re[1] += achtemp_re_loc[1];
