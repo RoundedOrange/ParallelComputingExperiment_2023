@@ -176,7 +176,6 @@ int main(int argc, char **argv)
 	return 0;
 }
 //核心函数，每个线程都调用这个函数
-
 void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands, size_t ncouls,
 		ARRAY1D_int &inv_igp_index, ARRAY1D_int &indinv,
 		ARRAY1D_DataType &wx_array, ARRAY2D &wtilde_array,
@@ -188,9 +187,7 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 	thread_ach_im[0] = thread_ach_im[1] = thread_ach_im[2] = thread_ach_re[0] = thread_ach_re[1] = thread_ach_re[2] = 0.00;
 	bool can_accelerate=true;
 	if(ngpown_end-ngpown_start>=256)
-	{
 		can_accelerate=false;
-	}
 	if(can_accelerate)
 	{
 		ComplexType conj_array[number_bands][ngpown_end-ngpown_start];
