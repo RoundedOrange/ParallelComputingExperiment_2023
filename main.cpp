@@ -186,43 +186,84 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 {
 	register  DataType thread_ach_re[3], thread_ach_im[3];//尽量不要用通过内存寻址访问，而是通过寄存器
 	thread_ach_im[0] = thread_ach_im[1] = thread_ach_im[2] = thread_ach_re[0] = thread_ach_re[1] = thread_ach_re[2] = 0.00;
-	ComplexType conj_array[number_bands][ngpown_end-ngpown_start];
-	int igp_array[ngpown_end-ngpown_start];
-	for(int i=0;i<number_bands;++i)
+	bool can_accelerate=true;
+	if(ngpown_end-ngpown_start>=256)
 	{
-		for(int j=0;j<ngpown_end-ngpown_start;j++)
+		can_accelerate=false;
+	}
+	if(can_accelerate)
+	{
+		ComplexType conj_array[number_bands][ngpown_end-ngpown_start];
+		int igp_array[ngpown_end-ngpown_start];
+		for(int i=0;i<number_bands;++i)
 		{
-			igp_array[j] = indinv(inv_igp_index(j+ngpown_start));
-			conj_array[i][j]=ComplexType_conj(aqsmtemp(i,igp_array[j]))*aqsntemp(i,igp_array[j]);
+			for(int j=0;j<ngpown_end-ngpown_start;j++)
+			{
+				igp_array[j] = indinv(inv_igp_index(j+ngpown_start));
+				conj_array[i][j]=ComplexType_conj(aqsmtemp(i,igp_array[j]))*aqsntemp(i,igp_array[j]);
+			}
+		}
+		for (int thread_igp = ngpown_start; thread_igp < ngpown_end; ++thread_igp) 
+		{
+			for (int n1 = 0; n1 < number_bands; ++n1) 
+			{
+				for (int ig = 0; ig < ncouls; ++ig) 
+				{
+					DataType achtemp_re_loc[nend - nstart]={0.00}, achtemp_im_loc[nend - nstart]={0.00};
+					ComplexType sch_store1 =conj_array[n1][thread_igp-ngpown_start] * wtilde_array(thread_igp,igp_array[thread_igp-ngpown_start])*I_eps_array(thread_igp, ig);
+					for (int iw = nstart; iw < nend; ++iw)
+					{
+						ComplexType wdiff =	wx_array(iw) - wtilde_array(thread_igp, ig);
+						DataType wdiff_real=wdiff.real();
+						DataType wdiff_imag = wdiff.imag();
+						DataType asas =1.0/ (wdiff_real*wdiff_real + wdiff_imag* wdiff_imag);
+						ComplexType delw =ComplexType_conj(wdiff) ;
+						ComplexType sch_array =	delw * sch_store1;
+						achtemp_re_loc[iw] += (sch_array).real()* 0.5* asas *	vcoul(igp_array[thread_igp-ngpown_start]);
+						achtemp_im_loc[iw] += (sch_array).imag()* 0.5* asas *	vcoul(igp_array[thread_igp-ngpown_start]);
+					}
+					thread_ach_re[0] += achtemp_re_loc[0];
+					thread_ach_re[1] += achtemp_re_loc[1];
+					thread_ach_re[2] += achtemp_re_loc[2];
+					thread_ach_im[0] += achtemp_im_loc[0];
+					thread_ach_im[1] += achtemp_im_loc[1];
+					thread_ach_im[2] += achtemp_im_loc[2];
+				}
+			} 
 		}
 	}
-	for (int thread_igp = ngpown_start; thread_igp < ngpown_end; ++thread_igp) 
+	else
 	{
-		for (int n1 = 0; n1 < number_bands; ++n1) 
+		for (int thread_igp = ngpown_start; thread_igp < ngpown_end; ++thread_igp) 
 		{
-			for (int ig = 0; ig < ncouls; ++ig) 
+			for (int n1 = 0; n1 < number_bands; ++n1) 
 			{
-				DataType achtemp_re_loc[nend - nstart]={0.00}, achtemp_im_loc[nend - nstart]={0.00};
-				ComplexType sch_store1 =conj_array[n1][thread_igp-ngpown_start] * wtilde_array(thread_igp,igp_array[thread_igp-ngpown_start])*I_eps_array(thread_igp, ig);
-				for (int iw = nstart; iw < nend; ++iw)
+				for (int ig = 0; ig < ncouls; ++ig) 
 				{
-					ComplexType wdiff =	wx_array(iw) - wtilde_array(thread_igp, ig);
-					DataType wdiff_real=wdiff.real();
-					DataType wdiff_imag = wdiff.imag();
-					DataType asas =1.0/ (wdiff_real*wdiff_real + wdiff_imag* wdiff_imag);
-					ComplexType delw =ComplexType_conj(wdiff) ;
-					ComplexType sch_array =	delw * sch_store1;
-					achtemp_re_loc[iw] += (sch_array).real()* 0.5* asas *	vcoul(igp_array[thread_igp-ngpown_start]);
-					achtemp_im_loc[iw] += (sch_array).imag()* 0.5* asas *	vcoul(igp_array[thread_igp-ngpown_start]);
+					DataType achtemp_re_loc[nend - nstart]={0.00}, achtemp_im_loc[nend - nstart]={0.00};
+					int indigp = inv_igp_index(thread_igp);
+					int igp = indinv(indigp);
+					ComplexType sch_store1 = ComplexType_conj(aqsmtemp(n1, igp)) * aqsntemp(n1, igp) * wtilde_array(thread_igp,igp)*I_eps_array(thread_igp, ig);
+					for (int iw = nstart; iw < nend; ++iw)
+					{
+						ComplexType wdiff =	wx_array(iw) - wtilde_array(thread_igp, ig);
+						DataType wdiff_real=wdiff.real();
+						DataType wdiff_imag = wdiff.imag();
+						DataType asas =1.0/ (wdiff_real*wdiff_real + wdiff_imag* wdiff_imag);
+						ComplexType delw =ComplexType_conj(wdiff) ;
+						ComplexType sch_array =	delw * sch_store1;
+						achtemp_re_loc[iw] += (sch_array).real()* 0.5* asas *	vcoul(igp);
+						achtemp_im_loc[iw] += (sch_array).imag()* 0.5* asas *	vcoul(igp);
+					}
+					thread_ach_re[0] += achtemp_re_loc[0];
+					thread_ach_re[1] += achtemp_re_loc[1];
+					thread_ach_re[2] += achtemp_re_loc[2];
+					thread_ach_im[0] += achtemp_im_loc[0];
+					thread_ach_im[1] += achtemp_im_loc[1];
+					thread_ach_im[2] += achtemp_im_loc[2];
 				}
-				thread_ach_re[0] += achtemp_re_loc[0];
-				thread_ach_re[1] += achtemp_re_loc[1];
-				thread_ach_re[2] += achtemp_re_loc[2];
-				thread_ach_im[0] += achtemp_im_loc[0];
-				thread_ach_im[1] += achtemp_im_loc[1];
-				thread_ach_im[2] += achtemp_im_loc[2];
-			}
-		} 
+			} 
+		}
 	}
 	//进入临界区
 	the_mutex.lock();
