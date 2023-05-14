@@ -8,8 +8,6 @@
 int thread_num;//线程数
 DataType ach_re0 = 0.00, ach_re1 = 0.00, ach_re2 = 0.00, ach_im0 = 0.00, ach_im1 = 0.00, ach_im2 = 0.00;//从循环里面提出来
 std::mutex the_mutex;//互斥量
-int global_number_bands;
-int global_ncouls;
 inline void correntess(ComplexType result1, ComplexType result2, ComplexType result3)
 {
 	double re_diff, im_diff;
@@ -69,8 +67,6 @@ int main(int argc, char **argv)
 			<< endl;
 		exit(0);
 	}
-	global_number_bands= number_bands;
-	global_ncouls = ncouls;
 	int ngpown = ncouls / (nodes_per_group * npes);
 
 	// Constants that will be used later
@@ -206,12 +202,7 @@ void thread_function(size_t ngpown_start, size_t ngpown_end,size_t number_bands,
 		{
 			for (int ig = 0; ig < ncouls; ++ig) 
 			{
-				DataType achtemp_re_loc[nend - nstart], achtemp_im_loc[nend - nstart];
-				for (int iw = nstart; iw < nend; ++iw)
-				{
-					achtemp_re_loc[iw] = 0.00;
-					achtemp_im_loc[iw] = 0.00;
-				}
+				DataType achtemp_re_loc[nend - nstart]={0.00}, achtemp_im_loc[nend - nstart]={0.00};
 				ComplexType sch_store1 =conj_array[n1][thread_igp-ngpown_start] * wtilde_array(thread_igp,igp_array[thread_igp-ngpown_start])*I_eps_array(thread_igp, ig);
 				for (int iw = nstart; iw < nend; ++iw)
 				{

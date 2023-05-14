@@ -3,7 +3,7 @@ CXX=g++
 
 gpp_obj = main.o
 
-CXXFLAGS = -Ofast -mavx2 -fopt-info -std=c++11 -fopenmp
+CXXFLAGS = -Ofast -mavx2 -fopt-info -std=c++11
 LDFLAGS = 
 
 all: main 
